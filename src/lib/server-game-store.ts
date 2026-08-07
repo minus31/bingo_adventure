@@ -1,7 +1,7 @@
 import "server-only";
 
 import { del, get, list, put } from "@vercel/blob";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   countTeamBingos,
@@ -13,7 +13,7 @@ import {
   type TeamId,
 } from "@/lib/game";
 import { applyGameAction, normalizeGameAction, type GameAction } from "@/lib/game-actions";
-import { BLOB_STORAGE_ENABLED, blobDatePrefix, DATA_DIRECTORY, koreaDate } from "@/lib/server-paths";
+import { BLOB_STORAGE_ENABLED, blobDatePrefix, DATA_DIRECTORY, koreaDate, UPLOAD_DIRECTORY } from "@/lib/server-paths";
 
 const DATA_FILE = path.join(DATA_DIRECTORY, "game-state.json");
 const TEMP_FILE = path.join(DATA_DIRECTORY, "game-state.tmp.json");
@@ -280,7 +280,10 @@ async function syncLocalTeamProgressFiles(
   mutation: ProgressMutation,
 ) {
   if (mutation.type === "reset") {
-    await clearLocalTeamProgressFiles();
+    await Promise.all([
+      clearLocalTeamProgressFiles(),
+      rm(UPLOAD_DIRECTORY, { recursive: true, force: true }),
+    ]);
     return;
   }
 
@@ -329,6 +332,10 @@ function blobTeamPath(teamId: TeamId) {
 
 function blobEventPrefix() {
   return `${blobDatePrefix()}/events/`;
+}
+
+function blobVideoPrefix() {
+  return `${blobDatePrefix()}/videos/`;
 }
 
 async function jsonFromBlob<T>(pathname: string): Promise<{ value: T; etag: string } | null> {
@@ -512,6 +519,17 @@ async function syncBlobTeamProgressFiles(events: BlobGameEvent[], state: GameSta
   if (incompleteTeamPaths.length > 0) await del(incompleteTeamPaths);
 }
 
+async function clearBlobVideos() {
+  const videoPathnames: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await list({ prefix: blobVideoPrefix(), cursor, limit: 1000 });
+    videoPathnames.push(...page.blobs.map((blob) => blob.pathname));
+    cursor = page.hasMore ? page.cursor : undefined;
+  } while (cursor);
+  if (videoPathnames.length > 0) await del(videoPathnames);
+}
+
 async function readBlobGameState(): Promise<GameState> {
   const current = await readBlobSnapshot();
   if (current) return current.state;
@@ -541,6 +559,7 @@ async function updateBlobGameState(action: GameAction): Promise<GameState> {
   await appendBlobEvent(action);
   const result = await writeBlobSnapshot();
   await syncBlobTeamProgressFiles(result.events, result.snapshot.state);
+  if (action.type === "reset") await clearBlobVideos();
   return result.snapshot.state;
 }
 
