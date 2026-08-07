@@ -12,6 +12,18 @@
 
 # testing
 /coverage
+/playwright-report/
+/test-results/
+
+# editor
+/.idea/
+/.vscode/
+*.swp
+*.swo
+
+# tool caches
+/.cache/
+/.turbo/
 
 # next.js
 /.next/
@@ -19,12 +31,15 @@
 
 # production
 /build
+/.data/
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
 
 # debug
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -32,6 +47,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel

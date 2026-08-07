@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Bingo Adventure
 
-## Getting Started
+4개 팀이 같은 18개 과제를 팀마다 서로 다른 위치에 배치하고, 인증 영상으로 경쟁하는 모바일 우선 3×3 빙고 게임입니다.
 
-First, run the development server:
+## 실행
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+브라우저에서 `http://localhost:3000`을 열고 A~D팀 중 하나를 선택합니다. 같은 서버 주소로 접속한 화면들은 약 2.5초 간격으로 제출과 판정 상태를 공유합니다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+관리자 페이지는 `http://localhost:3000/admin`, 테스트 PIN은 `2026`입니다.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 주요 흐름
 
-## Learn More
+- 각 팀이 18개 공용 과제를 자신의 18개 칸에 한 번씩 직접 배치
+- 팀마다 과제 위치는 독립적으로 저장
+- 어느 팀이 과제를 수행해도 모든 팀 빙고판의 해당 과제 위치에 진행 상태 반영
+- 과제별로 여러 팀이 최대 10초, 15MB의 인증 영상을 제출 가능
+- 판정 전에는 가장 먼저 유효하게 제출한 팀을 임시 점유자로 표시
+- 관리자는 영상을 검토해 부적합 처리 또는 최종 점유자 확정
+- 각 팀 고유 배치와 확정된 칸을 기준으로 빙고와 순위를 자동 계산
 
-To learn more about Next.js, take a look at the following resources:
+## Vercel 배포
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Vercel 프로젝트 하나와 같은 프로젝트에 연결된 Vercel Blob Store만으로 운영할 수 있습니다.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Vercel 대시보드에서 프로젝트를 생성하고 저장소를 연결합니다.
+2. 프로젝트의 Storage 메뉴에서 Blob Store를 생성해 연결합니다.
+3. 연결 후 생성되는 `BLOB_READ_WRITE_TOKEN` 환경 변수가 Production에 등록됐는지 확인합니다.
+4. 다시 배포합니다.
 
-## Deploy on Vercel
+영상은 브라우저에서 Vercel Blob으로 직접 업로드되므로 Vercel Function의 요청 크기 제한을 거치지 않습니다. 브라우저에서 재생시간 10초를 검사하고, Blob 업로드 토큰에서도 파일 형식과 15MB 제한을 적용합니다.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+무료 플랜에서도 소규모 행사 운영은 가능하지만, 제출 수와 반복 재생량에 따라 Blob 저장 공간과 전송량을 사용합니다. 최대 4팀 × 18개 과제를 모두 15MB로 제출하면 영상 원본만 약 1.08GB이므로 행사 전에 현재 Vercel 사용 한도를 확인하세요.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 날짜별 데이터
+
+Vercel Blob을 연결하면 한국 시간 날짜별로 아래 경로가 자동 생성됩니다.
+
+```text
+bingo-adventure/games/YYYY-MM-DD/
+├── events/                       # 덮어쓰지 않는 상태 변경 로그 JSON
+├── snapshots/game-state.json     # 모든 화면이 읽는 최신 공유 상태
+├── teams/team-A.json             # 18칸을 채운 뒤 생성되는 팀별 진행 파일
+├── teams/team-B.json
+├── teams/team-C.json
+├── teams/team-D.json
+└── videos/{team}/{task}/          # 인증 영상
+```
+
+상태 변경마다 고유 이벤트 파일을 먼저 생성하고, 최신 스냅샷은 ETag 조건부 갱신으로 저장합니다. 동시에 여러 팀이 제출해도 먼저 저장된 변경을 덮어쓰지 않습니다. 팀별 진행 파일에는 고유 배치, 제출 수, 선두 및 확정 팀, 빙고 수, 시간순 활동 로그가 들어갑니다. 날짜가 바뀌면 새 경로에서 빈 게임으로 시작합니다.
+
+`BINGO_BLOB_ROOT`로 Blob의 최상위 폴더명을 바꿀 수 있습니다. 현재 앱에는 사용자 인증이 없고 영상과 JSON Blob은 공개 URL로 저장되므로, 외부 공개 행사가 아니라면 배포 전에 인증을 추가해야 합니다.
+
+## 로컬 저장 대체 경로
+
+`BLOB_READ_WRITE_TOKEN`이 없는 로컬 개발 환경에서는 기존 파일 저장으로 자동 전환됩니다.
+
+- `.data/game-state.json`: 공유 게임 상태
+- `.data/teams/team-A.json`부터 `team-D.json`: 팀별 진행 파일
+- `.data/uploads`: 제출 영상
+
+로컬 데이터 위치는 `BINGO_DATA_DIRECTORY` 환경 변수로 변경할 수 있습니다.
