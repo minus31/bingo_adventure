@@ -27,15 +27,28 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<GameState>(EMPTY_GAME);
   const [currentTeam, setCurrentTeam] = useState<TeamId | null>(null);
   const requestQueue = useRef(Promise.resolve());
+  const pendingActions = useRef<GameAction[]>([]);
+  const confirmedSaveVersion = useRef(0);
+  const refreshSequence = useRef(0);
+
+  const mergePendingActions = useCallback((remote: GameState) => (
+    pendingActions.current.reduce(applyGameAction, remote)
+  ), []);
 
   useEffect(() => {
     let active = true;
     const refresh = async () => {
+      const sequence = ++refreshSequence.current;
+      const saveVersion = confirmedSaveVersion.current;
       try {
         const response = await fetch("/api/game", { cache: "no-store" });
         if (!response.ok) throw new Error("sync failed");
         const remote = await response.json() as GameState;
-        if (active) setState(remote);
+        if (
+          active
+          && sequence === refreshSequence.current
+          && saveVersion === confirmedSaveVersion.current
+        ) setState(mergePendingActions(remote));
       } catch {
         // Keep the latest in-memory state while the server reconnects.
       }
@@ -56,21 +69,24 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("focus", syncWhenVisible);
       document.removeEventListener("visibilitychange", syncWhenVisible);
     };
-  }, []);
+  }, [mergePendingActions]);
 
   const save = useCallback((action: GameAction) => {
+    pendingActions.current.push(action);
     setState((previous) => applyGameAction(previous, action));
     requestQueue.current = requestQueue.current.then(async () => {
       try {
         const response = await fetch("/api/game", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(action) });
         if (!response.ok) throw new Error("save failed");
         const remote = await response.json() as GameState;
-        setState(remote);
+        confirmedSaveVersion.current += 1;
+        pendingActions.current = pendingActions.current.filter((pending) => pending !== action);
+        setState(mergePendingActions(remote));
       } catch {
         // The optimistic local state remains available when the server is offline.
       }
     });
-  }, []);
+  }, [mergePendingActions]);
 
   const value = useMemo<GameContextValue>(() => ({
     ready,
