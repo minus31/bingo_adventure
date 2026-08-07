@@ -90,8 +90,6 @@ type BlobSnapshot = {
   state: GameState;
 };
 
-type BlobSnapshotRecord = { snapshot: BlobSnapshot; etag: string };
-
 function isGameState(value: Partial<GameState>): value is GameState {
   return value.version === 4
     && Array.isArray(value.missions)
@@ -315,8 +313,14 @@ async function syncLocalTeamProgressFiles(
   }));
 }
 
-function blobSnapshotPath() {
-  return `${blobDatePrefix()}/snapshots/game-state.json`;
+function blobSnapshotPrefix() {
+  return `${blobDatePrefix()}/snapshots/`;
+}
+
+function blobSnapshotPath(events: BlobGameEvent[]) {
+  const revision = String(events.length).padStart(10, "0");
+  const lastEventId = events.at(-1)?.id ?? "initial";
+  return `${blobSnapshotPrefix()}${revision}-${lastEventId}.json`;
 }
 
 function blobTeamPath(teamId: TeamId) {
@@ -334,9 +338,18 @@ async function jsonFromBlob<T>(pathname: string): Promise<{ value: T; etag: stri
   return { value, etag: result.blob.etag };
 }
 
-async function readBlobSnapshot(): Promise<BlobSnapshotRecord | null> {
+async function readBlobSnapshot(): Promise<BlobSnapshot | null> {
   try {
-    const result = await jsonFromBlob<BlobSnapshot>(blobSnapshotPath());
+    const blobs: Awaited<ReturnType<typeof list>>["blobs"] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await list({ prefix: blobSnapshotPrefix(), cursor, limit: 1000 });
+      blobs.push(...page.blobs.filter((blob) => /\/\d{10}-(?:initial|[a-f0-9-]+)\.json$/.test(blob.pathname)));
+      cursor = page.hasMore ? page.cursor : undefined;
+    } while (cursor);
+    const latest = blobs.sort((a, b) => a.pathname.localeCompare(b.pathname)).at(-1);
+    if (!latest) return null;
+    const result = await jsonFromBlob<BlobSnapshot>(latest.pathname);
     if (
       !result
       || result.value.schemaVersion !== 1
@@ -344,7 +357,7 @@ async function readBlobSnapshot(): Promise<BlobSnapshotRecord | null> {
       || !Array.isArray(result.value.eventPathnames)
       || !isGameState(result.value.state)
     ) return null;
-    return { snapshot: result.value, etag: result.etag };
+    return result.value;
   } catch {
     return null;
   }
@@ -381,47 +394,30 @@ function replayEvents(events: BlobGameEvent[]) {
   return events.reduce((state, event) => applyGameAction(state, event.action), EMPTY_GAME as GameState);
 }
 
-function snapshotsMatch(snapshot: BlobSnapshot, events: BlobGameEvent[]) {
-  return snapshot.eventPathnames.length === events.length
-    && snapshot.eventPathnames.every((pathname, index) => pathname === events[index].pathname);
-}
-
-async function writeBlobSnapshotWithRetry(): Promise<{ snapshot: BlobSnapshot; events: BlobGameEvent[] }> {
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    const current = await readBlobSnapshot();
-    const events = await readBlobEvents();
-    if (current && snapshotsMatch(current.snapshot, events)) {
-      return { snapshot: current.snapshot, events };
-    }
-
-    const updatedAt = events.at(-1)?.at ?? new Date().toISOString();
-    const snapshot: BlobSnapshot = {
-      schemaVersion: 1,
-      date: koreaDate(),
-      revision: events.length,
-      eventPathnames: events.map((event) => event.pathname),
-      updatedAt,
-      state: replayEvents(events),
-    };
-    try {
-      await put(blobSnapshotPath(), JSON.stringify(snapshot), {
-        access: "public",
-        contentType: "application/json; charset=utf-8",
-        cacheControlMaxAge: 60,
-        addRandomSuffix: false,
-        allowOverwrite: Boolean(current),
-        ...(current ? { ifMatch: current.etag } : {}),
-      });
-      return { snapshot, events };
-    } catch (error) {
-      const latest = await readBlobSnapshot();
-      const changedByAnotherRequest = current
-        ? latest?.etag !== current.etag
-        : Boolean(latest);
-      if (!changedByAnotherRequest || attempt === 5) throw error;
-    }
+async function writeBlobSnapshot(): Promise<{ snapshot: BlobSnapshot; events: BlobGameEvent[] }> {
+  const events = await readBlobEvents();
+  const snapshot: BlobSnapshot = {
+    schemaVersion: 1,
+    date: koreaDate(),
+    revision: events.length,
+    eventPathnames: events.map((event) => event.pathname),
+    updatedAt: events.at(-1)?.at ?? new Date().toISOString(),
+    state: replayEvents(events),
+  };
+  const pathname = blobSnapshotPath(events);
+  if (await jsonFromBlob<BlobSnapshot>(pathname)) return { snapshot, events };
+  try {
+    await put(pathname, JSON.stringify(snapshot), {
+      access: "public",
+      contentType: "application/json; charset=utf-8",
+      cacheControlMaxAge: 31536000,
+      addRandomSuffix: false,
+      allowOverwrite: false,
+    });
+  } catch (error) {
+    if (!await jsonFromBlob<BlobSnapshot>(pathname)) throw error;
   }
-  throw new Error("게임 스냅샷 갱신 횟수를 초과했습니다.");
+  return { snapshot, events };
 }
 
 function deriveTeamProgress(
@@ -518,8 +514,8 @@ async function syncBlobTeamProgressFiles(events: BlobGameEvent[], state: GameSta
 
 async function readBlobGameState(): Promise<GameState> {
   const current = await readBlobSnapshot();
-  if (current) return current.snapshot.state;
-  const recovered = await writeBlobSnapshotWithRetry();
+  if (current) return current.state;
+  const recovered = await writeBlobSnapshot();
   await syncBlobTeamProgressFiles(recovered.events, recovered.snapshot.state);
   return recovered.snapshot.state;
 }
@@ -543,7 +539,7 @@ async function updateBlobGameState(action: GameAction): Promise<GameState> {
   const current = await readBlobGameState();
   if (applyGameAction(current, action) === current && action.type !== "reset") return current;
   await appendBlobEvent(action);
-  const result = await writeBlobSnapshotWithRetry();
+  const result = await writeBlobSnapshot();
   await syncBlobTeamProgressFiles(result.events, result.snapshot.state);
   return result.snapshot.state;
 }
