@@ -22,6 +22,7 @@ let mutationQueue = Promise.resolve();
 
 type ProgressMutation =
   | { type: "mission_saved"; boardTeamId: TeamId; catalogId: string; slotId: string }
+  | { type: "mission_removed"; boardTeamId: TeamId; slotId: string }
   | { type: "video_submitted"; catalogId: string; submissionId: string; teamId: TeamId }
   | { type: "winner_decided"; catalogId: string; submissionId: string }
   | { type: "decision_cleared"; catalogId: string }
@@ -107,6 +108,13 @@ function progressMutationFor(action: GameAction): ProgressMutation {
       slotId: action.mission.id,
     };
   }
+  if (action.type === "remove-mission") {
+    return {
+      type: "mission_removed",
+      boardTeamId: action.boardTeamId,
+      slotId: action.slotId,
+    };
+  }
   if (action.type === "submit") {
     return {
       type: "video_submitted",
@@ -130,6 +138,9 @@ function makeLogEntry(
   const base = { id, at };
   if (mutation.type === "mission_saved") {
     return { ...base, type: "board_updated", teamId: mutation.boardTeamId, catalogId: mutation.catalogId, slotId: mutation.slotId };
+  }
+  if (mutation.type === "mission_removed") {
+    return { ...base, type: "board_updated", teamId: mutation.boardTeamId, slotId: mutation.slotId };
   }
   if (mutation.type === "video_submitted") {
     return { ...base, type: "video_submitted", teamId: mutation.teamId, catalogId: mutation.catalogId, submissionId: mutation.submissionId };
@@ -288,15 +299,24 @@ async function syncLocalTeamProgressFiles(
   }
 
   const updatedAt = new Date().toISOString();
-  const isGlobalProgressMutation = mutation.type !== "mission_saved";
+  const isGlobalProgressMutation = mutation.type !== "mission_saved" && mutation.type !== "mission_removed";
   await Promise.all(TEAM_IDS.map(async (teamId) => {
     const previousCount = previousState.missions.filter((mission) => mission.boardTeamId === teamId).length;
     const currentCount = state.missions.filter((mission) => mission.boardTeamId === teamId).length;
+    if (mutation.type === "mission_removed" && mutation.boardTeamId === teamId && currentCount < 18) {
+      try {
+        await unlink(localTeamFile(teamId));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      return;
+    }
     if (currentCount !== 18) return;
 
     const existing = await readLocalTeamProgress(teamId);
     const justCompleted = previousCount < 18 || !existing;
-    const boardChanged = mutation.type === "mission_saved" && mutation.boardTeamId === teamId;
+    const boardChanged = (mutation.type === "mission_saved" || mutation.type === "mission_removed")
+      && mutation.boardTeamId === teamId;
     if (!justCompleted && !boardChanged && !isGlobalProgressMutation) return;
 
     const entries = existing?.activityLog ? [...existing.activityLog] : [];
@@ -457,7 +477,8 @@ function deriveTeamProgress(
     if (currentCount !== 18) continue;
 
     const mutation = progressMutationFor(event.action);
-    const belongsToTeam = mutation.type !== "mission_saved" || mutation.boardTeamId === teamId;
+    const belongsToTeam = mutation.type !== "mission_saved" && mutation.type !== "mission_removed"
+      || mutation.boardTeamId === teamId;
     if (!belongsToTeam || (justCompleted && mutation.type === "mission_saved")) continue;
     const entry = makeLogEntry(replayed, mutation, event.at, `${event.id}:activity`);
     if (entry) activityLog.push(entry);
@@ -512,7 +533,10 @@ async function syncBlobTeamProgressFiles(events: BlobGameEvent[], state: GameSta
     const progress = deriveTeamProgress(events, state, teamId);
     if (progress) {
       await writeBlobTeamProgress(progress);
-    } else if (hasResetEvent) {
+    } else if (
+      hasResetEvent
+      || events.some((event) => event.action.type === "remove-mission" && event.action.boardTeamId === teamId)
+    ) {
       incompleteTeamPaths.push(blobTeamPath(teamId));
     }
   }));

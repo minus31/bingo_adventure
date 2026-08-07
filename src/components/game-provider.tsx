@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { EMPTY_GAME, type GameState, type Mission, type Submission, type TeamId } from "@/lib/game";
 import { applyGameAction, type GameAction } from "@/lib/game-actions";
 
-const TEAM_KEY = "bingo-adventure-team-v1";
+const TEAM_KEY = "bingo-adventure-team-v2";
 
 type GameContextValue = {
   ready: boolean;
@@ -13,6 +13,7 @@ type GameContextValue = {
   login: (teamId: TeamId) => void;
   logout: () => void;
   saveMission: (mission: Mission) => void;
+  removeMission: (slotId: string, boardTeamId: TeamId) => void;
   addSubmission: (submission: Submission) => void;
   decideWinner: (catalogId: string, submissionId: string) => void;
   clearDecision: (catalogId: string) => void;
@@ -101,6 +102,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       setCurrentTeam(null);
     },
     saveMission: (mission) => save({ type: "save-mission", mission }),
+    removeMission: (slotId, boardTeamId) => save({ type: "remove-mission", slotId, boardTeamId }),
     addSubmission: (submission) => save({ type: "submit", submission }),
     decideWinner: (catalogId, submissionId) => save({ type: "decide", catalogId, submissionId }),
     clearDecision: (catalogId) => save({ type: "clear", catalogId }),

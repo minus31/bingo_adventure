@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ListChecks, LockKeyhole, UsersRound } from "lucide-react";
+import { Check, ListChecks, LockKeyhole, Minus, UsersRound } from "lucide-react";
 import { useGame } from "@/components/game-provider";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { MISSION_CATALOG, TEAMS, type CatalogMission, type Mission, type MissionSlot } from "@/lib/game";
@@ -17,7 +17,7 @@ export function MissionPickerDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { state, currentTeam, saveMission } = useGame();
+  const { state, currentTeam, removeMission, saveMission } = useGame();
   if (!currentTeam) return null;
 
   const selectMission = (catalogMission: CatalogMission) => {
@@ -62,6 +62,15 @@ export function MissionPickerDialog({
         </div>
 
         <div className="max-h-[58dvh] space-y-2 overflow-y-auto overscroll-contain pr-1">
+          {mission && <button
+            type="button"
+            onClick={() => { removeMission(slot.id, currentTeam); onOpenChange(false); }}
+            className="flex w-full items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-left transition active:scale-[0.99]"
+          >
+            <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white text-red-500"><Minus className="size-5" strokeWidth={2.5} /></span>
+            <span className="min-w-0 flex-1"><span className="block text-sm font-black text-red-700">과제 빼기</span><span className="mt-1 block text-[11px] font-medium text-red-500">이 칸을 비운 뒤 다시 과제를 선택할 수 있어요.</span></span>
+            <span className="shrink-0 rounded-lg bg-red-500 px-2 py-1 text-[10px] font-black text-white">빼기</span>
+          </button>}
           {MISSION_CATALOG.map((catalogMission) => {
             const usedByAnotherSlot = state.missions.some(
               (item) => item.boardTeamId === currentTeam

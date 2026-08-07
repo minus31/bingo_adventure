@@ -11,6 +11,7 @@ import {
 
 export type GameAction =
   | { type: "save-mission"; mission: Mission }
+  | { type: "remove-mission"; slotId: string; boardTeamId: TeamId }
   | { type: "submit"; submission: Submission }
   | { type: "decide"; catalogId: string; submissionId: string }
   | { type: "clear"; catalogId: string }
@@ -87,6 +88,14 @@ export function normalizeGameAction(value: unknown, now = new Date().toISOString
     const mission = normalizeMission(candidate.mission, now);
     return mission ? { type: "save-mission", mission } : null;
   }
+  if (
+    candidate.type === "remove-mission"
+    && typeof candidate.slotId === "string"
+    && MISSION_SLOTS.some((slot) => slot.id === candidate.slotId)
+    && isTeamId(candidate.boardTeamId)
+  ) {
+    return { type: "remove-mission", slotId: candidate.slotId, boardTeamId: candidate.boardTeamId };
+  }
   if (candidate.type === "submit") {
     const submission = normalizeSubmission(candidate.submission, now);
     return submission ? { type: "submit", submission } : null;
@@ -125,6 +134,18 @@ export function applyGameAction(previous: GameState, action: GameAction): GameSt
       missions: current
         ? previous.missions.map((item) => item.id === mission.id && item.boardTeamId === mission.boardTeamId ? mission : item)
         : [...previous.missions, mission],
+    };
+  }
+  if (action.type === "remove-mission") {
+    const current = previous.missions.find(
+      (item) => item.id === action.slotId && item.boardTeamId === action.boardTeamId,
+    );
+    if (!current || previous.submissions.some((item) => item.catalogId === current.catalogId)) return previous;
+    return {
+      ...previous,
+      missions: previous.missions.filter(
+        (item) => item.id !== action.slotId || item.boardTeamId !== action.boardTeamId,
+      ),
     };
   }
   if (action.type === "submit") {
