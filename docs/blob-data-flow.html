@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bingo Adventure, Blob 데이터 흐름</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f3ee;
+      --surface: #ffffff;
+      --surface-soft: #faf9f6;
+      --text: #18181b;
+      --muted: #71717a;
+      --line: #dedbd4;
+      --orange: #f0522d;
+      --orange-soft: #fff0eb;
+      --violet: #6758e8;
+      --violet-soft: #f0eeff;
+      --green: #108a65;
+      --green-soft: #e7f8f2;
+      --red: #cf3131;
+      --red-soft: #fff0f0;
+      --amber: #a96800;
+      --amber-soft: #fff7df;
+      --shadow: 0 18px 55px rgba(24, 24, 27, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    button, input { font: inherit; }
+    a { color: inherit; }
+    code {
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--text) 7%, transparent);
+      padding: 0.12rem 0.36rem;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.87em;
+    }
+    .shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 34px 0 64px; }
+    .hero {
+      overflow: hidden;
+      position: relative;
+      border-radius: 28px;
+      background: #17171a;
+      color: #fff;
+      padding: 30px;
+      box-shadow: var(--shadow);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 260px;
+      height: 260px;
+      right: -80px;
+      top: -120px;
+      border-radius: 50%;
+      background: var(--orange);
+      filter: blur(42px);
+      opacity: 0.35;
+    }
+    .eyebrow { margin: 0 0 8px; color: #ff8a6f; font-size: 12px; font-weight: 800; letter-spacing: 0.14em; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { position: relative; z-index: 1; margin-bottom: 9px; font-size: clamp(29px, 5vw, 48px); line-height: 1.08; letter-spacing: -0.045em; }
+    .hero p:last-child { position: relative; z-index: 1; max-width: 760px; margin: 0; color: rgba(255,255,255,0.66); }
+    .status-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+    .status {
+      position: relative;
+      z-index: 1;
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      padding: 7px 11px;
+      color: rgba(255,255,255,0.86);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0; }
+    .tab {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface);
+      color: var(--muted);
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 800;
+    }
+    .tab[aria-selected="true"] { border-color: var(--text); background: var(--text); color: var(--surface); }
+    .panel[hidden] { display: none; }
+    .section { margin-top: 28px; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
+    .section-head h2 { margin-bottom: 2px; font-size: clamp(21px, 3vw, 28px); letter-spacing: -0.03em; }
+    .section-head p { margin: 0; color: var(--muted); font-size: 13px; }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--surface);
+      padding: 18px;
+      box-shadow: 0 8px 30px rgba(24, 24, 27, 0.04);
+    }
+    .lane {
+      display: grid;
+      grid-template-columns: minmax(135px, 0.8fr) 28px minmax(150px, 1fr) 28px minmax(180px, 1.25fr) 28px minmax(180px, 1.25fr);
+      align-items: stretch;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .lane:last-child { margin-bottom: 0; }
+    .node {
+      min-height: 104px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--surface-soft);
+      padding: 14px;
+    }
+    .node strong { display: block; margin-bottom: 6px; font-size: 14px; }
+    .node span { display: block; color: var(--muted); font-size: 12px; }
+    .node.phone { border-color: color-mix(in srgb, var(--orange) 35%, var(--line)); background: var(--orange-soft); }
+    .node.api { border-color: color-mix(in srgb, var(--violet) 35%, var(--line)); background: var(--violet-soft); }
+    .node.blob { border-color: color-mix(in srgb, var(--green) 35%, var(--line)); background: var(--green-soft); }
+    .node.warn { border-color: color-mix(in srgb, var(--amber) 40%, var(--line)); background: var(--amber-soft); }
+    .arrow { display: grid; place-items: center; color: var(--muted); font-size: 21px; }
+    .flow-label { margin: 18px 0 8px; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: 0.08em; }
+    .tree {
+      overflow-x: auto;
+      margin: 0;
+      border-radius: 16px;
+      background: #17171a;
+      color: #d8d8dd;
+      padding: 18px;
+      font: 13px/1.75 "SFMono-Regular", Consolas, monospace;
+      white-space: pre;
+    }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; color: var(--muted); font-size: 12px; }
+    .dot { display: inline-block; width: 9px; height: 9px; margin-right: 5px; border-radius: 50%; }
+    .calculator { display: grid; grid-template-columns: minmax(230px, 0.8fr) minmax(0, 1.7fr); gap: 16px; }
+    .controls { display: grid; gap: 14px; }
+    .control label { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 5px; font-size: 13px; font-weight: 800; }
+    .control output { color: var(--orange); }
+    .control input[type="range"] { width: 100%; accent-color: var(--orange); }
+    .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .metric { border: 1px solid var(--line); border-radius: 16px; background: var(--surface-soft); padding: 14px; }
+    .metric span { display: block; color: var(--muted); font-size: 11px; font-weight: 700; }
+    .metric strong { display: block; margin-top: 4px; font-size: clamp(18px, 3vw, 25px); letter-spacing: -0.03em; }
+    .metric small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
+    .formula { margin: 13px 0 0; color: var(--muted); font-size: 12px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 720px; }
+    th, td { border-bottom: 1px solid var(--line); padding: 12px 10px; text-align: left; vertical-align: top; font-size: 13px; }
+    th { color: var(--muted); font-size: 11px; letter-spacing: 0.04em; }
+    td:nth-child(2), td:nth-child(3), th:nth-child(2), th:nth-child(3) { text-align: right; white-space: nowrap; }
+    tr:last-child td { border-bottom: 0; }
+    .risk-list { display: grid; gap: 10px; }
+    .risk { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 12px; border-bottom: 1px solid var(--line); padding: 0 0 12px; }
+    .risk:last-child { border-bottom: 0; padding-bottom: 0; }
+    .severity { width: fit-content; height: fit-content; border-radius: 999px; padding: 5px 9px; font-size: 11px; font-weight: 900; }
+    .critical { background: var(--red-soft); color: var(--red); }
+    .high { background: var(--amber-soft); color: var(--amber); }
+    .medium { background: var(--violet-soft); color: var(--violet); }
+    .risk h3 { margin-bottom: 4px; font-size: 15px; }
+    .risk p { margin: 0; color: var(--muted); font-size: 12px; }
+    .evidence { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .evidence .card { box-shadow: none; }
+    .evidence strong { display: block; margin-bottom: 7px; font-size: 15px; }
+    .evidence p { margin: 0; color: var(--muted); font-size: 12px; }
+    .ok { border-color: color-mix(in srgb, var(--green) 40%, var(--line)); }
+    .bad { border-color: color-mix(in srgb, var(--red) 40%, var(--line)); }
+    .note { border-left: 4px solid var(--orange); border-radius: 0 14px 14px 0; background: var(--orange-soft); padding: 13px 15px; color: color-mix(in srgb, var(--text) 82%, var(--orange)); font-size: 12px; }
+    footer { margin-top: 34px; color: var(--muted); text-align: center; font-size: 11px; }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111114;
+        --surface: #1b1b1f;
+        --surface-soft: #222227;
+        --text: #f4f4f5;
+        --muted: #a1a1aa;
+        --line: #38383f;
+        --orange-soft: #3a211b;
+        --violet-soft: #292642;
+        --green-soft: #17332b;
+        --red-soft: #391f21;
+        --amber-soft: #352b16;
+      }
+      .tab[aria-selected="true"] { background: #f4f4f5; color: #18181b; }
+    }
+
+    @media (max-width: 850px) {
+      .lane { grid-template-columns: 1fr; }
+      .arrow { transform: rotate(90deg); min-height: 20px; }
+      .calculator { grid-template-columns: 1fr; }
+      .metrics, .evidence { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 560px) {
+      .shell { width: min(100% - 20px, 1180px); padding-top: 10px; }
+      .hero { border-radius: 20px; padding: 23px 19px; }
+      .tabs { position: sticky; top: 0; z-index: 10; background: var(--bg); padding: 8px 0; }
+      .tab { flex: 1; padding: 9px 6px; font-size: 12px; }
+      .section-head { display: block; }
+      .metrics, .evidence { grid-template-columns: 1fr; }
+      .risk { grid-template-columns: 1fr; gap: 7px; }
+      .card { padding: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <p class="eyebrow">BINGO ADVENTURE, VERCEL BLOB</p>
+      <h1>게임 데이터가 저장되고<br>모든 폰에 전달되는 과정</h1>
+      <p>현재 코드 기준의 실제 파일 구조, 5초 동기화, 영상 업로드, 이벤트와 스냅샷 생성량, 동시 사용 시 주의점을 한 화면에서 확인합니다.</p>
+      <div class="status-row" aria-label="검증 상태">
+        <span class="status">Blob Pro, Active</span>
+        <span class="status">운영 API, HTTP 200</span>
+        <span class="status">기준일, 2026-08-11</span>
+        <span class="status">앱 동기화, 5초</span>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="시각화 보기">
+      <button class="tab" type="button" role="tab" aria-selected="true" aria-controls="flow-panel" id="flow-tab" data-panel="flow-panel">데이터 흐름</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="volume-panel" id="volume-tab" data-panel="volume-panel">파일과 호출량</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="risk-panel" id="risk-tab" data-panel="risk-panel">예상 오류</button>
+    </nav>
+
+    <section class="panel" id="flow-panel" role="tabpanel" aria-labelledby="flow-tab">
+      <div class="section-head">
+        <div><h2>1. 모든 화면의 상태 동기화</h2><p>화면이 보이는 동안 각 기기가 독립적으로 실행합니다.</p></div>
+      </div>
+      <div class="card">
+        <div class="lane">
+          <div class="node phone"><strong>팀 폰, 관리자 폰</strong><span>첫 진입, 포커스 복귀, 화면 재표시, 이후 5초마다 조회</span></div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="node api"><strong>GET /api/game</strong><span>브라우저 캐시 없이 현재 게임 상태 요청</span></div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="node blob"><strong>snapshots 목록 조회</strong><span>오늘 날짜에서 revision이 가장 큰 파일 선택</span></div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="node blob"><strong>최신 snapshot 읽기</strong><span>missions, submissions, decisions 전체를 폰으로 반환</span></div>
+        </div>
+      </div>
+
+      <p class="flow-label">과제 배치, 판정, 빼기, 초기화</p>
+      <div class="card">
+        <div class="lane">
+          <div class="node phone"><strong>사용자 동작</strong><span>화면에는 먼저 낙관적으로 반영</span></div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="node api"><strong>POST /api/game</strong><span>서버 검증 후 이벤트 1건 생성</span></div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="node blob"><strong>events 파일 추가</strong><span>기존 파일은 수정하지 않고 JSON 1개 추가</span></div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="node blob"><strong>모든 event 재생</strong><span>새 snapshot 1개 생성, 완성된 팀 JSON 갱신</span></div>
+        </div>
+      </div>
+
+      <p class="flow-label">영상 제출</p>
+      <div class="card">
+        <div class="lane">
+          <div class="node phone"><strong>10초 이하 영상 선택</strong><span>브라우저에서 형식, 15MB, 재생시간 확인</span></div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="node api"><strong>POST /api/upload</strong><span>경로, MIME, 최대 크기가 제한된 업로드 토큰 발급</span></div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="node blob"><strong>폰에서 Blob으로 직접 전송</strong><span>Vercel Function을 거치지 않고 video 파일 생성</span></div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="node warn"><strong>영상 URL을 게임에 등록</strong><span>별도의 POST /api/game으로 submit 이벤트 생성</span></div>
+        </div>
+      </div>
+
+      <p class="flow-label">관리자 전체 초기화</p>
+      <div class="card">
+        <div class="lane">
+          <div class="node phone"><strong>reset 요청</strong><span>관리자 화면에서 확인 후 전송</span></div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="node api"><strong>reset 이벤트와 snapshot</strong><span>상태는 빈 게임으로 재생됨</span></div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="node blob"><strong>오늘의 videos 삭제</strong><span>team JSON도 제거</span></div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="node warn"><strong>events, snapshots 유지</strong><span>감사 기록은 날짜 폴더에 계속 남음</span></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><div><h2>2. 날짜별 Blob 파일 구조</h2><p>날짜는 Asia/Seoul 기준이며 자정에 새 폴더로 전환됩니다.</p></div></div>
+        <pre class="tree" aria-label="Vercel Blob 파일 트리">bingo-adventure/
+└── games/
+    └── YYYY-MM-DD/
+        ├── events/
+        │   └── 13자리시각-uuid.json          상태 변경 1건마다 1개 추가
+        ├── snapshots/
+        │   └── 10자리revision-lastId.json    상태 변경마다 전체 상태 1개 추가
+        ├── teams/
+        │   ├── team-A.json                   18칸 완성 후 같은 경로를 갱신
+        │   ├── team-B.json
+        │   ├── team-C.json
+        │   └── team-D.json
+        └── videos/
+            └── {team}/{task}/{uuid}.mp4       업로드 성공마다 1개 추가</pre>
+        <div class="legend">
+          <span><i class="dot" style="background:var(--green)"></i>추가만 하는 파일, events와 snapshots와 videos</span>
+          <span><i class="dot" style="background:var(--violet)"></i>같은 경로를 덮어쓰는 파일, team JSON</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="volume-panel" role="tabpanel" aria-labelledby="volume-tab" hidden>
+      <div class="section-head">
+        <div><h2>호출량과 파일 수 계산</h2><p>슬라이더를 현재 행사 운영 예상치에 맞추면 하루 규모를 계산합니다.</p></div>
+      </div>
+      <div class="calculator">
+        <div class="card controls">
+          <div class="control"><label for="screens">동시에 열린 화면 <output id="screens-value">5대</output></label><input id="screens" type="range" min="1" max="20" value="5"></div>
+          <div class="control"><label for="hours">게임 운영 시간 <output id="hours-value">8시간</output></label><input id="hours" type="range" min="1" max="12" value="8"></div>
+          <div class="control"><label for="actions">상태 변경 이벤트 <output id="actions-value">150건</output></label><input id="actions" type="range" min="0" max="400" step="10" value="150"></div>
+          <div class="control"><label for="videos">업로드 영상 <output id="videos-value">72개</output></label><input id="videos" type="range" min="0" max="300" step="6" value="72"></div>
+          <div class="control"><label for="video-size">영상 평균 크기 <output id="video-size-value">8MB</output></label><input id="video-size" type="range" min="1" max="15" value="8"></div>
+        </div>
+        <div class="card">
+          <div class="metrics" aria-live="polite">
+            <div class="metric"><span>게임 API 폴링</span><strong id="polls">28,800</strong><small>5초마다, 화면이 보일 때</small></div>
+            <div class="metric"><span>snapshot 목록 조회</span><strong id="lists">28,800</strong><small>폴링 1회당 list 1회</small></div>
+            <div class="metric"><span>최신 snapshot 읽기</span><strong id="snapshot-reads">28,800</strong><small>폴링 1회당 get 1회</small></div>
+            <div class="metric"><span>날짜 폴더의 JSON 파일</span><strong id="json-files">305</strong><small>events, snapshots, 최대 team 4개</small></div>
+            <div class="metric"><span>이벤트 재생용 누적 읽기</span><strong id="event-reads">11,325</strong><small>상태 변경 시 모든 events 재조회</small></div>
+            <div class="metric"><span>영상 저장량</span><strong id="video-storage">576MB</strong><small>최대 크기는 영상당 15MB</small></div>
+          </div>
+          <p class="formula" id="formula">JSON 파일 수는 이벤트 150개, snapshot 151개, team JSON 최대 4개를 합산한 값입니다.</p>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><div><h2>파일 생성과 읽기 규칙</h2><p>일반적인 순차 처리 기준이며 동시 요청에서는 snapshot 수가 줄거나 충돌할 수 있습니다.</p></div></div>
+        <div class="card table-wrap">
+          <table>
+            <thead><tr><th>상황</th><th>새 파일</th><th>읽기와 목록 조회</th><th>설명</th></tr></thead>
+            <tbody>
+              <tr><td>새 날짜 첫 접속</td><td>snapshot 1</td><td>snapshots list, events list</td><td>빈 초기 상태를 날짜 폴더에 생성</td></tr>
+              <tr><td>과제 배치 또는 빼기</td><td>event 1, snapshot 1</td><td>최신 snapshot, 모든 events</td><td>완성된 팀이 있으면 team JSON도 덮어씀</td></tr>
+              <tr><td>영상 파일 업로드</td><td>video 1</td><td>업로드 설정 1회</td><td>파일은 폰에서 Blob으로 직접 전송</td></tr>
+              <tr><td>영상 URL 등록</td><td>event 1, snapshot 1</td><td>최신 snapshot, 모든 events</td><td>업로드와 상태 등록은 서로 다른 요청</td></tr>
+              <tr><td>관리자 판정</td><td>event 1, snapshot 1</td><td>최신 snapshot, 모든 events</td><td>완성된 모든 팀의 team JSON 갱신</td></tr>
+              <tr><td>5초 폴링 1회</td><td>0</td><td>snapshots list 1, snapshot get 1</td><td>모든 상태를 한 번에 다운로드</td></tr>
+              <tr><td>전체 초기화</td><td>event 1, snapshot 1</td><td>videos list, delete</td><td>video와 team 파일 삭제, 이력 JSON은 유지</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><div><h2>실제 격리 테스트 샘플</h2><p>49개 이벤트가 기록된 동시 요청 테스트의 Blob 메타데이터입니다.</p></div></div>
+        <div class="evidence">
+          <div class="card"><strong>events, 49개</strong><p>총 20,721 bytes, 평균 423 bytes</p></div>
+          <div class="card"><strong>snapshots, 31개</strong><p>총 248,991 bytes, 평균 8,032 bytes</p></div>
+          <div class="card"><strong>team JSON, 2개</strong><p>총 22,370 bytes, 파일당 11,185 bytes</p></div>
+        </div>
+        <p class="note" style="margin-top:12px">snapshot은 그 시점의 전체 상태와 event 경로를 반복 저장하므로, 이벤트가 늘수록 파일 하나의 크기도 커집니다. 영상이 없는 이 샘플의 전체 JSON은 292,082 bytes였습니다.</p>
+      </div>
+    </section>
+
+    <section class="panel" id="risk-panel" role="tabpanel" aria-labelledby="risk-tab" hidden>
+      <div class="section-head"><div><h2>현재 구조의 예상 오류 요소</h2><p>코드는 변경하지 않고 정적 검토와 격리된 실제 Blob 동시 요청으로 확인했습니다.</p></div></div>
+      <div class="card risk-list">
+        <article class="risk"><span class="severity critical">치명적</span><div><h3>PIN과 관리자 권한이 브라우저에만 존재</h3><p>팀 PIN, 관리자 PIN, 로그인 상태는 클라이언트 코드와 Web Storage에만 있습니다. API에는 인증 검사가 없어서 직접 POST하면 다른 팀 배치, 판정, 전체 초기화를 수행할 수 있습니다.</p></div></article>
+        <article class="risk"><span class="severity critical">치명적</span><div><h3>영상 업로드 토큰도 팀 인증 없이 발급 가능</h3><p>teamId와 catalogId 형식만 맞으면 업로드 토큰을 요청할 수 있습니다. 사용량 남용, 임의 팀 경로 업로드, 저장 비용 증가 가능성이 있습니다.</p></div></article>
+        <article class="risk"><span class="severity high">높음</span><div><h3>팀 완성 후 동시 요청에서 ETag 충돌</h3><p>완성된 team JSON을 같은 경로에 여러 요청이 동시에 덮어쓰면서 500이 발생할 수 있습니다. 실제 burst 테스트에서 Precondition failed, ETag mismatch를 재현했습니다.</p></div></article>
+        <article class="risk"><span class="severity high">높음</span><div><h3>이벤트 파일 직후 읽기가 실패하면 snapshot에서 누락</h3><p>event 읽기 오류를 건별로 무시하기 때문에 새 이벤트 일부가 최신 snapshot에 들어가지 않을 수 있습니다. 다음 상태 변경이 발생해야 전체 events를 다시 읽으며 회복될 가능성이 있습니다.</p></div></article>
+        <article class="risk"><span class="severity high">높음</span><div><h3>낙관적 저장 실패가 사용자에게 표시되지 않음</h3><p>화면은 먼저 성공한 것처럼 바뀌고 POST 실패는 조용히 무시됩니다. 재시도와 로컬 영속화가 없어 같은 탭에서는 저장된 것처럼 보이고, 새로고침하면 사라질 수 있습니다.</p></div></article>
+        <article class="risk"><span class="severity high">높음</span><div><h3>영상 업로드와 제출 등록이 분리됨</h3><p>video 업로드 후 submit 이벤트 저장이 실패하면 Blob에는 영상만 남습니다. 반대로 UI는 addSubmission 완료를 기다리지 않고 제출 완료 화면을 보여줄 수 있습니다.</p></div></article>
+        <article class="risk"><span class="severity high">높음</span><div><h3>10초 제한은 브라우저에서만 확인</h3><p>서버 토큰은 MIME과 15MB만 제한합니다. API를 직접 사용하면 10초가 넘는 영상도 업로드할 수 있습니다.</p></div></article>
+        <article class="risk"><span class="severity medium">중간</span><div><h3>영상 수와 총용량에 상한이 없음</h3><p>같은 팀이 같은 과제에 여러 번 제출할 수 있습니다. 72개를 각 15MB로 한 번씩만 올려도 약 1,080MB이며, 재도전과 고아 영상은 여기에 추가됩니다.</p></div></article>
+        <article class="risk"><span class="severity medium">중간</span><div><h3>공개 Blob에 영상과 team JSON 저장</h3><p>영상 URL을 알면 인증 없이 재생할 수 있고, team JSON 경로는 예측 가능합니다. 행사 영상의 공개 범위를 사전에 합의할 필요가 있습니다.</p></div></article>
+        <article class="risk"><span class="severity medium">중간</span><div><h3>클라이언트가 제출 시각과 영상 URL을 지정</h3><p>유효한 날짜라면 제출 시각을 그대로 수용하며, 허용 URL도 현재 저장소로 제한하지 않습니다. 직접 API 호출로 최초 제출 순서와 참조 영상을 조작할 수 있습니다.</p></div></article>
+        <article class="risk"><span class="severity medium">중간</span><div><h3>자정에 게임이 자동으로 새 날짜로 전환</h3><p>Asia/Seoul 00:00 이후 API는 새 폴더를 사용합니다. 자정을 넘겨 진행하면 기존 상태가 사라진 것처럼 보이며 전날 영상과 JSON은 그대로 남습니다.</p></div></article>
+        <article class="risk"><span class="severity medium">중간</span><div><h3>이벤트 증가에 따라 저장 작업이 점점 무거워짐</h3><p>상태 변경마다 모든 event를 다시 읽고 전체 snapshot을 새로 저장합니다. 누적 event 읽기는 N(N+1)/2 형태로 증가하고 snapshots 총용량도 비슷한 방향으로 커집니다.</p></div></article>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><div><h2>동시 사용자 검증 결과</h2><p>운영 데이터와 분리된 Blob 경로에서 실행했습니다.</p></div></div>
+        <div class="evidence">
+          <div class="card ok"><strong>기본 동시 접속, 통과</strong><p>빈 게임 8개 동시 GET, 서로 다른 과제 4개 동시 배치, 이후 6개 병렬 조회가 모두 HTTP 200이고 동일한 상태였습니다.</p></div>
+          <div class="card ok"><strong>재시작 복구, 통과</strong><p>서버 재시작 후 4개 병렬 GET에서 저장된 5개 과제가 동일하게 복구됐습니다.</p></div>
+          <div class="card bad"><strong>완성 팀 이후 burst, 실패</strong><p>A팀 18칸 완성 뒤 B팀 10개, C팀 18개를 각각 동시에 요청하자 ETag mismatch 500이 반복됐고 최종 snapshot에서 C팀은 13개만 보였습니다.</p></div>
+        </div>
+        <p class="note" style="margin-top:12px">실제 사람의 터치 간격은 burst 테스트보다 느리므로 발생 빈도는 낮아질 수 있습니다. 다만 여러 폰이 같은 팀을 채우거나 네 팀이 동시에 제출하는 순간에는 동일한 충돌 경로를 사용할 수 있습니다.</p>
+      </div>
+    </section>
+
+    <footer>현재 main 코드와 실제 Vercel Blob 동작을 기준으로 작성, 테스트용 Blob 데이터는 확인 후 삭제</footer>
+  </main>
+
+  <script>
+    const tabs = [...document.querySelectorAll('.tab')];
+    const panels = [...document.querySelectorAll('.panel')];
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        tabs.forEach((item) => item.setAttribute('aria-selected', String(item === tab)));
+        panels.forEach((panel) => { panel.hidden = panel.id !== tab.dataset.panel; });
+      });
+    });
+
+    const controls = {
+      screens: document.getElementById('screens'),
+      hours: document.getElementById('hours'),
+      actions: document.getElementById('actions'),
+      videos: document.getElementById('videos'),
+      videoSize: document.getElementById('video-size')
+    };
+    const format = new Intl.NumberFormat('ko-KR');
+    function updateCalculator() {
+      const screens = Number(controls.screens.value);
+      const hours = Number(controls.hours.value);
+      const actions = Number(controls.actions.value);
+      const videos = Number(controls.videos.value);
+      const videoSize = Number(controls.videoSize.value);
+      const polls = screens * hours * 60 * 60 / 5;
+      const teamFiles = Math.min(4, Math.floor(actions / 18));
+      const jsonFiles = actions + (actions + 1) + teamFiles;
+      const eventReads = actions * (actions + 1) / 2;
+      document.getElementById('screens-value').textContent = `${screens}대`;
+      document.getElementById('hours-value').textContent = `${hours}시간`;
+      document.getElementById('actions-value').textContent = `${format.format(actions)}건`;
+      document.getElementById('videos-value').textContent = `${format.format(videos)}개`;
+      document.getElementById('video-size-value').textContent = `${videoSize}MB`;
+      document.getElementById('polls').textContent = format.format(polls);
+      document.getElementById('lists').textContent = format.format(polls);
+      document.getElementById('snapshot-reads').textContent = format.format(polls);
+      document.getElementById('json-files').textContent = format.format(jsonFiles);
+      document.getElementById('event-reads').textContent = format.format(eventReads);
+      document.getElementById('video-storage').textContent = `${format.format(videos * videoSize)}MB`;
+      document.getElementById('formula').textContent = `JSON 파일 수는 이벤트 ${format.format(actions)}개, snapshot ${format.format(actions + 1)}개, team JSON 최대 ${format.format(teamFiles)}개를 합산한 값입니다.`;
+    }
+    Object.values(controls).forEach((control) => control.addEventListener('input', updateCalculator));
+    updateCalculator();
+  </script>
+</body>
+</html>
