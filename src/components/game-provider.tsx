@@ -60,7 +60,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       void refresh();
     }, 0);
     const syncWhenVisible = () => { if (document.visibilityState === "visible") void refresh(); };
-    const polling = window.setInterval(syncWhenVisible, 2500);
+    const polling = window.setInterval(syncWhenVisible, 5000);
     window.addEventListener("focus", syncWhenVisible);
     document.addEventListener("visibilitychange", syncWhenVisible);
     return () => {

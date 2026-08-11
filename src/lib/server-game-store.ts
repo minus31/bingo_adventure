@@ -359,35 +359,35 @@ function blobVideoPrefix() {
 }
 
 async function jsonFromBlob<T>(pathname: string): Promise<{ value: T; etag: string } | null> {
-  const result = await get(pathname, { access: "public", useCache: false });
+  const result = await get(`${pathname}?v=${Date.now()}-${crypto.randomUUID()}`, {
+    access: "public",
+    useCache: false,
+  });
   if (!result || result.statusCode !== 200) return null;
   const value = await new Response(result.stream).json() as T;
   return { value, etag: result.blob.etag };
 }
 
+function isBlobSnapshot(value: BlobSnapshot) {
+  return value.schemaVersion === 1
+    && value.date === koreaDate()
+    && Array.isArray(value.eventPathnames)
+    && isGameState(value.state);
+}
+
 async function readBlobSnapshot(): Promise<BlobSnapshot | null> {
-  try {
-    const blobs: Awaited<ReturnType<typeof list>>["blobs"] = [];
-    let cursor: string | undefined;
-    do {
-      const page = await list({ prefix: blobSnapshotPrefix(), cursor, limit: 1000 });
-      blobs.push(...page.blobs.filter((blob) => /\/\d{10}-(?:initial|[a-f0-9-]+)\.json$/.test(blob.pathname)));
-      cursor = page.hasMore ? page.cursor : undefined;
-    } while (cursor);
-    const latest = blobs.sort((a, b) => a.pathname.localeCompare(b.pathname)).at(-1);
-    if (!latest) return null;
-    const result = await jsonFromBlob<BlobSnapshot>(latest.pathname);
-    if (
-      !result
-      || result.value.schemaVersion !== 1
-      || result.value.date !== koreaDate()
-      || !Array.isArray(result.value.eventPathnames)
-      || !isGameState(result.value.state)
-    ) return null;
-    return result.value;
-  } catch {
-    return null;
-  }
+  const blobs: Awaited<ReturnType<typeof list>>["blobs"] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await list({ prefix: blobSnapshotPrefix(), cursor, limit: 1000 });
+    blobs.push(...page.blobs.filter((blob) => /\/\d{10}-(?:initial|[a-f0-9-]+)\.json$/.test(blob.pathname)));
+    cursor = page.hasMore ? page.cursor : undefined;
+  } while (cursor);
+  const latest = blobs.sort((a, b) => a.pathname.localeCompare(b.pathname)).at(-1);
+  if (!latest) return null;
+  const result = await jsonFromBlob<BlobSnapshot>(latest.pathname);
+  if (!result || !isBlobSnapshot(result.value)) return null;
+  return result.value;
 }
 
 async function listAllEventBlobs() {
@@ -432,17 +432,19 @@ async function writeBlobSnapshot(): Promise<{ snapshot: BlobSnapshot; events: Bl
     state: replayEvents(events),
   };
   const pathname = blobSnapshotPath(events);
-  if (await jsonFromBlob<BlobSnapshot>(pathname)) return { snapshot, events };
-  try {
-    await put(pathname, JSON.stringify(snapshot), {
-      access: "public",
-      contentType: "application/json; charset=utf-8",
-      cacheControlMaxAge: 31536000,
-      addRandomSuffix: false,
-      allowOverwrite: false,
-    });
-  } catch (error) {
-    if (!await jsonFromBlob<BlobSnapshot>(pathname)) throw error;
+  if (!await jsonFromBlob<BlobSnapshot>(pathname)) {
+    try {
+      await put(pathname, JSON.stringify(snapshot), {
+        access: "public",
+        contentType: "application/json; charset=utf-8",
+        cacheControlMaxAge: 31536000,
+        addRandomSuffix: false,
+        allowOverwrite: false,
+      });
+    } catch (error) {
+      const existing = await list({ prefix: pathname, limit: 1 });
+      if (!existing.blobs.some((blob) => blob.pathname === pathname)) throw error;
+    }
   }
   return { snapshot, events };
 }
